@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Exoplanet Autoencoder — 3D Stellar Map</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet"/>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{--void:#02040e;--panel:rgba(5,9,20,0.93);--edge:#1a2640;--tp:#00e5ff;--tn:#4a6070;--text:#cfd8dc;--dim:#3d5466;--accent:#00e5ff}
+  html,body{width:100%;height:100%;background:var(--void);overflow:hidden}
+  body{font-family:'Space Mono',monospace;color:var(--text)}
+  #plot{width:100vw;height:100vh;touch-action:none}  /* touch-action:none lets our handlers own all touch events */
+
+  #header{position:fixed;top:0;left:0;right:0;z-index:10;padding:13px 22px 10px;
+    background:linear-gradient(180deg,rgba(2,4,14,.97) 55%,transparent 100%);
+    display:flex;align-items:center;justify-content:space-between;pointer-events:none}
+  .htitle{font-family:'Orbitron',sans-serif;font-weight:900;font-size:clamp(11px,1.5vw,16px);
+    letter-spacing:.13em;color:var(--accent);text-shadow:0 0 16px rgba(0,229,255,.4);text-transform:uppercase}
+  .hsub{font-size:9px;color:var(--dim);letter-spacing:.07em;margin-top:2px}
+  .hbadges{display:flex;gap:8px;pointer-events:auto}
+  .badge{font-family:'Orbitron',sans-serif;font-size:9px;font-weight:700;letter-spacing:.1em;
+    padding:3px 9px;border-radius:2px;text-transform:uppercase}
+  .bv4{background:rgba(0,229,255,.07);border:1px solid rgba(0,229,255,.28);color:var(--accent)}
+  .bref{background:rgba(255,255,255,.02);border:1px solid var(--edge);color:var(--dim)}
+
+  #stats{position:fixed;top:62px;left:20px;z-index:10;display:flex;flex-direction:column;gap:5px}
+  .stat-pill{background:var(--panel);border:1px solid var(--edge);border-radius:3px;
+    padding:6px 12px;backdrop-filter:blur(10px);display:flex;align-items:baseline;gap:8px}
+  .snum{font-family:'Orbitron',sans-serif;font-size:15px;font-weight:900}
+  .slbl{font-size:9px;color:var(--dim);letter-spacing:.05em}
+  .np{color:var(--tp);text-shadow:0 0 10px rgba(0,229,255,.35)}
+  .nr{color:var(--tn)}
+
+  #legend{position:fixed;top:62px;right:20px;z-index:10;background:var(--panel);
+    border:1px solid var(--edge);border-radius:3px;padding:12px 14px;min-width:185px;
+    backdrop-filter:blur(10px)}
+  .ltitle{font-family:'Orbitron',sans-serif;font-size:8px;font-weight:700;
+    letter-spacing:.14em;color:var(--dim);text-transform:uppercase;margin-bottom:9px}
+  .litem{display:flex;align-items:center;gap:7px;padding:3px 0}
+  .ldot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+  .lname{font-size:10px;color:var(--text);flex:1}
+  .lcount{font-family:'Orbitron',sans-serif;font-size:9px;color:var(--dim)}
+  .ldiv{height:1px;background:var(--edge);margin:7px 0}
+  .lsmall{font-size:9px;color:var(--dim)}
+
+  #controls{position:fixed;bottom:0;left:0;right:0;z-index:10;padding:9px 18px;
+    background:linear-gradient(0deg,rgba(2,4,14,.97) 55%,transparent 100%);
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .clabel{font-size:9px;color:var(--dim);letter-spacing:.09em;text-transform:uppercase;white-space:nowrap}
+  .tbtn{font-family:'Space Mono',monospace;font-size:10px;padding:7px 14px;border-radius:2px;
+    border:1px solid var(--edge);background:transparent;color:var(--dim);cursor:pointer;
+    transition:all .13s;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+  .tbtn:hover{border-color:var(--accent);color:var(--text)}
+  .tbtn.on{background:rgba(0,229,255,.07);border-color:rgba(0,229,255,.45);color:var(--accent)}
+  .mbtn{font-family:'Space Mono',monospace;font-size:10px;padding:7px 14px;border-radius:2px;
+    border:1px solid var(--edge);background:transparent;color:var(--dim);cursor:pointer;
+    transition:all .13s;text-transform:uppercase;-webkit-tap-highlight-color:transparent}
+  .mbtn:hover{border-color:#90caf9;color:#90caf9}
+  .mbtn.on{background:rgba(144,202,249,.08);border-color:#90caf9;color:#90caf9}
+  .sep{width:1px;height:17px;background:var(--edge);flex-shrink:0}
+  .fnote{font-size:9px;color:var(--dim);margin-left:auto;white-space:nowrap}
+
+  #tip{position:fixed;z-index:20;pointer-events:auto;background:var(--panel);
+    border:1px solid rgba(0,229,255,.22);border-radius:3px;padding:12px 15px 12px 13px;min-width:210px;max-width:270px;
+    backdrop-filter:blur(10px);display:none;
+    box-shadow:0 0 22px rgba(0,229,255,.07),0 4px 20px rgba(0,0,0,.65)}
+  #tip.vis{display:block}
+  #tip-close{position:absolute;top:7px;right:9px;background:none;border:none;color:var(--dim);
+    font-size:15px;cursor:pointer;line-height:1;padding:2px 4px;-webkit-tap-highlight-color:transparent}
+  #tip-close:hover{color:var(--text)}
+  .tname{font-family:'Orbitron',sans-serif;font-size:11px;color:var(--accent);margin-bottom:6px;
+    letter-spacing:.04em;padding-right:18px}
+  .tpill{display:inline-block;font-family:'Orbitron',sans-serif;font-size:8px;font-weight:700;
+    letter-spacing:.1em;padding:2px 7px;border-radius:1px;text-transform:uppercase;margin-bottom:7px}
+  .pplanet{background:rgba(0,229,255,.1);border:1px solid var(--tp);color:var(--tp)}
+  .preject{background:rgba(74,96,112,.15);border:1px solid #546e7a;color:#78909c}
+  .psolar{background:rgba(255,241,118,.08);border:1px solid rgba(255,241,118,.4);color:#fff176}
+  .pfp{background:rgba(255,100,100,.08);border:1px solid rgba(255,100,100,.4);color:#ff8a80}
+  .pfn{background:rgba(255,180,50,.08);border:1px solid rgba(255,180,50,.4);color:#ffcc80}
+  .trow{display:flex;justify-content:space-between;gap:14px;padding:3px 0}
+  .tkey{font-size:9px;color:var(--dim);letter-spacing:.06em;text-transform:uppercase}
+  .tval{font-size:11px;color:var(--text)}
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div>
+    <div class="htitle">Exoplanet Autoencoder · 3D Stellar Map</div>
+    <div class="hsub">Kepler Field · Gaia DR3 Cross-Match · 150 Test Stars · Solar System at Origin</div>
+  </div>
+  <div class="hbadges">
+    <span class="badge bv4">v4 · 86.67% Balanced Acc</span>
+  </div>
+</div>
+
+<div id="stats">
+  <div class="stat-pill"><span class="snum np">83</span><span class="slbl">Flagged as Planet Candidate (69 correct + 14 FP)</span></div>
+  <div class="stat-pill"><span class="snum nr">67</span><span class="slbl">Rejected (61 correct + 6 missed planets)</span></div>
+</div>
+
+<div id="legend">
+  <div class="ltitle" id="ltitle">Model Decision</div>
+  <div id="leg-outcome">
+    <div class="litem"><div class="ldot" style="background:#00e5ff;box-shadow:0 0 5px #00e5ff"></div><span class="lname">Planet Candidate</span><span class="lcount">83</span></div>
+    <div class="litem"><div class="ldot" style="background:#4a6070"></div><span class="lname">Rejected by Model</span><span class="lcount">67</span></div>
+  </div>
+  <div id="leg-type" style="display:none">
+    <div class="litem"><div class="ldot" style="background:#ef9a9a"></div><span class="lname">Rocky (&lt;1.6 R⊕)</span><span class="lcount">51</span></div>
+    <div class="litem"><div class="ldot" style="background:#80cbc4"></div><span class="lname">Super-Earth / Mini-Nep.</span><span class="lcount">69</span></div>
+    <div class="litem"><div class="ldot" style="background:#ce93d8"></div><span class="lname">Gas Giant (&gt;4 R⊕)</span><span class="lcount">30</span></div>
+  </div>
+  <div class="ldiv"></div>
+  <div class="litem"><div class="ldot" style="background:#fff176;width:8px;height:8px"></div><span class="lsmall">&nbsp;☀ Sun (origin)</span></div>
+  <div class="litem"><div class="ldot" style="background:#42a5f5;width:7px;height:7px"></div><span class="lsmall">&nbsp;Solar System planets</span></div>
+</div>
+
+<div id="plot"></div>
+
+<div id="controls">
+  <span class="clabel">Color</span>
+  <button class="mbtn on" id="bo" onclick="setMode('outcome')">Prediction</button>
+  <button class="mbtn"    id="bt" onclick="setMode('type')">Planet Type</button>
+  <div class="sep"></div>
+  <span class="clabel">Show</span>
+  <button class="tbtn on" id="tp-btn"    onclick="tog('PLANET')">Planet Candidates</button>
+  <button class="tbtn on" id="rej-btn"   onclick="tog('REJECTED')">Rejected FPs</button>
+  <button class="tbtn on" id="solar-btn" onclick="togSolar()">Solar System</button>
+  <span class="fnote">1-finger drag: rotate · 2-finger pinch: zoom · 2-finger drag: pan · Tap star for details</span>
+</div>
+
+<div id="tip">
+  <button id="tip-close" onclick="hideTip()">✕</button>
+  <div class="tname" id="tname"></div>
+  <div id="tpill"></div>
+  <div class="tt-rows" id="trows"></div>
+</div>
+
+<script>
+const STARS=[{"name":"Kepler-22","koi":"KOI-0087","ra":289.03,"dec":47.89,"dist":187,"x":40.9,"y":-118.5,"z":138.7,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-186","koi":"KOI-0571","ra":293.38,"dec":44.31,"dist":178,"x":50.5,"y":-116.9,"z":124.3,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-452","koi":"KOI-7016","ra":286.72,"dec":44.32,"dist":430,"x":88.5,"y":-294.6,"z":300.4,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-62","koi":"KOI-0701","ra":284.73,"dec":45.35,"dist":368,"x":65.8,"y":-250.1,"z":261.8,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-438","koi":"KOI-3284","ra":285.8,"dec":41.07,"dist":145,"x":29.8,"y":-105.2,"z":95.3,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-10","koi":"KOI-0072","ra":285.68,"dec":50.24,"dist":173,"x":29.9,"y":-106.5,"z":133.0,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-11","koi":"KOI-0157","ra":297.61,"dec":41.91,"dist":617,"x":212.8,"y":-406.9,"z":412.1,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-20","koi":"KOI-0070","ra":294.28,"dec":42.34,"dist":290,"x":88.1,"y":-195.4,"z":195.3,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-36","koi":"KOI-1236","ra":281.59,"dec":49.91,"dist":567,"x":73.4,"y":-357.7,"z":433.8,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-78","koi":"KOI-1843","ra":284.07,"dec":44.45,"dist":130,"x":22.6,"y":-90.0,"z":91.0,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-42","koi":"KOI-0961","ra":284.11,"dec":46.97,"dist":124,"x":20.6,"y":-82.1,"z":90.6,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-444","koi":"KOI-3158","ra":290.95,"dec":41.63,"dist":36,"x":9.6,"y":-25.1,"z":23.9,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-16","koi":"KOI-1939","ra":287.77,"dec":51.76,"dist":196,"x":37.0,"y":-115.5,"z":153.9,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-7","koi":"KOI-0097","ra":291.88,"dec":41.08,"dist":1016,"x":285.4,"y":-710.7,"z":667.6,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-5","koi":"KOI-0018","ra":297.23,"dec":44.03,"dist":1795,"x":590.5,"y":-1147.5,"z":1247.6,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-6","koi":"KOI-0017","ra":285.02,"dec":48.75,"dist":1097,"x":187.4,"y":-698.6,"z":824.8,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-8","koi":"KOI-0010","ra":285.01,"dec":42.45,"dist":1213,"x":231.8,"y":-864.5,"z":818.7,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-88","koi":"KOI-0142","ra":296.84,"dec":43.01,"dist":1200,"x":396.2,"y":-783.0,"z":818.6,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-100","koi":"KOI-0041","ra":296.16,"dec":41.11,"dist":575,"x":191.0,"y":-388.9,"z":378.1,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-102","koi":"KOI-0082","ra":286.43,"dec":47.25,"dist":345,"x":66.2,"y":-224.6,"z":253.3,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-131","koi":"KOI-0306","ra":282.03,"dec":40.55,"dist":565,"x":89.5,"y":-419.9,"z":367.3,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-34","koi":"KOI-2459","ra":296.0,"dec":46.9,"dist":1499,"x":449.0,"y":-920.6,"z":1094.5,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-35","koi":"KOI-2937","ra":296.47,"dec":46.87,"dist":1631,"x":497.0,"y":-998.2,"z":1190.3,"planet_type":"Gas Giant","outcome":"TN"},{"name":"Kepler-61","koi":"KOI-1361","ra":296.34,"dec":50.22,"dist":533,"x":151.3,"y":-305.6,"z":409.6,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-62b","koi":"KOI-0701","ra":284.73,"dec":45.35,"dist":368,"x":66.2,"y":-251.0,"z":262.5,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-283","koi":"KOI-1298","ra":296.88,"dec":47.13,"dist":909,"x":279.6,"y":-551.6,"z":666.2,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-296","koi":"KOI-1422","ra":294.67,"dec":40.71,"dist":754,"x":238.6,"y":-519.4,"z":491.8,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-338","koi":"KOI-1930","ra":287.49,"dec":44.77,"dist":788,"x":168.1,"y":-533.6,"z":555.0,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-388","koi":"KOI-2753","ra":295.57,"dec":43.67,"dist":1455,"x":454.2,"y":-949.4,"z":1004.7,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-440","koi":"KOI-4086","ra":299.45,"dec":46.51,"dist":851,"x":288.0,"y":-510.0,"z":617.4,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-560","koi":"KOI-3548","ra":285.54,"dec":46.22,"dist":1150,"x":213.2,"y":-766.6,"z":830.3,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-736","koi":"KOI-2672","ra":293.11,"dec":45.0,"dist":812,"x":225.4,"y":-528.1,"z":574.2,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-1229","koi":"KOI-2418","ra":290.32,"dec":46.44,"dist":770,"x":184.3,"y":-497.6,"z":558.0,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-1544","koi":"KOI-5765","ra":291.87,"dec":51.02,"dist":1118,"x":262.0,"y":-652.7,"z":869.1,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-174","koi":"KOI-0526","ra":288.75,"dec":42.41,"dist":891,"x":211.5,"y":-622.9,"z":600.9,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-176","koi":"KOI-0523","ra":296.18,"dec":44.85,"dist":1018,"x":318.4,"y":-647.7,"z":717.9,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-215","koi":"KOI-0784","ra":289.88,"dec":43.54,"dist":618,"x":152.3,"y":-421.3,"z":425.7,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-251","koi":"KOI-1151","ra":292.43,"dec":51.87,"dist":1087,"x":256.1,"y":-620.4,"z":855.0,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-254","koi":"KOI-1194","ra":298.12,"dec":40.93,"dist":618,"x":220.1,"y":-411.8,"z":404.9,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-269","koi":"KOI-1270","ra":282.87,"dec":43.86,"dist":891,"x":143.1,"y":-626.3,"z":617.4,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-304","koi":"KOI-1422","ra":290.84,"dec":39.42,"dist":1423,"x":391.1,"y":-1027.4,"z":903.6,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-357","koi":"KOI-2298","ra":283.34,"dec":50.14,"dist":879,"x":130.0,"y":-548.2,"z":674.7,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-107","koi":"KOI-0117","ra":289.04,"dec":48.44,"dist":1089,"x":235.7,"y":-682.9,"z":814.9,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-154","koi":"KOI-0351","ra":283.82,"dec":49.12,"dist":892,"x":139.5,"y":-566.9,"z":674.4,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-128","koi":"KOI-0274","ra":283.51,"dec":48.15,"dist":763,"x":118.9,"y":-495.0,"z":568.4,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-145","koi":"KOI-0370","ra":291.38,"dec":41.69,"dist":940,"x":255.9,"y":-653.6,"z":625.2,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-238","koi":"KOI-1050","ra":281.64,"dec":43.49,"dist":1312,"x":192.0,"y":-932.3,"z":903.0,"planet_type":"Gas Giant","outcome":"TN"},{"name":"Kepler-155","koi":"KOI-0370","ra":292.56,"dec":39.81,"dist":695,"x":204.8,"y":-493.0,"z":445.0,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-400","koi":"KOI-4214","ra":288.89,"dec":41.0,"dist":372.6,"x":91.0,"y":-266.0,"z":244.4,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-401","koi":"KOI-3368","ra":296.04,"dec":45.96,"dist":767.1,"x":234.1,"y":-479.1,"z":551.4,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-402","koi":"KOI-2594","ra":289.28,"dec":47.2,"dist":476.9,"x":107.0,"y":-305.9,"z":349.9,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-403","koi":"KOI-1538","ra":290.15,"dec":40.69,"dist":650.9,"x":170.0,"y":-463.3,"z":424.3,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-404","koi":"KOI-7680","ra":290.32,"dec":44.04,"dist":644.2,"x":160.8,"y":-434.3,"z":447.8,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-406","koi":"KOI-6740","ra":293.9,"dec":40.14,"dist":741.3,"x":229.6,"y":-518.1,"z":477.9,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-407","koi":"KOI-6720","ra":284.42,"dec":49.81,"dist":320.0,"x":51.4,"y":-200.0,"z":244.4,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-408","koi":"KOI-2564","ra":298.15,"dec":39.9,"dist":1535.2,"x":555.7,"y":-1038.5,"z":984.6,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-409","koi":"KOI-3500","ra":293.38,"dec":44.12,"dist":385.7,"x":109.9,"y":-254.1,"z":268.5,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-411","koi":"KOI-3644","ra":284.09,"dec":39.09,"dist":338.9,"x":64.0,"y":-255.1,"z":213.6,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-412","koi":"KOI-8855","ra":288.29,"dec":43.05,"dist":1058.0,"x":242.7,"y":-734.1,"z":722.3,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-413","koi":"KOI-3803","ra":282.04,"dec":51.19,"dist":489.6,"x":64.0,"y":-300.1,"z":381.5,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-415","koi":"KOI-4901","ra":288.44,"dec":44.57,"dist":231.4,"x":52.1,"y":-156.4,"z":162.4,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-416","koi":"KOI-4307","ra":299.96,"dec":51.12,"dist":1194.5,"x":374.4,"y":-649.6,"z":929.8,"planet_type":"Gas Giant","outcome":"TN"},{"name":"Kepler-417","koi":"KOI-7309","ra":289.48,"dec":42.36,"dist":325.5,"x":80.2,"y":-226.8,"z":219.3,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-419","koi":"KOI-6788","ra":297.37,"dec":41.91,"dist":412.2,"x":141.0,"y":-272.4,"z":275.3,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-420","koi":"KOI-0121","ra":298.93,"dec":43.18,"dist":529.1,"x":186.6,"y":-337.7,"z":362.1,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-421","koi":"KOI-4423","ra":291.49,"dec":52.25,"dist":639.5,"x":143.4,"y":-364.3,"z":505.7,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-422","koi":"KOI-4810","ra":296.47,"dec":49.08,"dist":556.1,"x":162.3,"y":-326.0,"z":420.2,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-426","koi":"KOI-6473","ra":290.14,"dec":39.93,"dist":285.1,"x":75.3,"y":-205.3,"z":183.0,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-427","koi":"KOI-6369","ra":289.2,"dec":52.31,"dist":372.2,"x":74.8,"y":-214.9,"z":294.5,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-428","koi":"KOI-1324","ra":284.04,"dec":51.69,"dist":2500,"x":376.0,"y":-1503.5,"z":1961.7,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-429","koi":"KOI-1282","ra":291.7,"dec":52.96,"dist":617.8,"x":137.6,"y":-345.8,"z":493.1,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-430","koi":"KOI-5327","ra":287.39,"dec":49.01,"dist":708.5,"x":138.9,"y":-443.5,"z":534.8,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-432","koi":"KOI-6943","ra":291.25,"dec":46.33,"dist":143.7,"x":36.0,"y":-92.5,"z":103.9,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-433","koi":"KOI-1257","ra":285.05,"dec":40.83,"dist":586.1,"x":115.2,"y":-428.2,"z":383.1,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-434","koi":"KOI-8864","ra":292.31,"dec":40.97,"dist":748.1,"x":214.5,"y":-522.5,"z":490.6,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-436","koi":"KOI-3893","ra":280.73,"dec":45.69,"dist":487.1,"x":63.3,"y":-334.3,"z":348.6,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-437","koi":"KOI-5709","ra":293.53,"dec":49.41,"dist":723.9,"x":188.0,"y":-431.8,"z":549.7,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-438b","koi":"KOI-8640","ra":297.81,"dec":44.54,"dist":263.7,"x":87.7,"y":-166.2,"z":185.0,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-442","koi":"KOI-1284","ra":292.86,"dec":38.31,"dist":655.2,"x":199.7,"y":-473.8,"z":406.1,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-443","koi":"KOI-0666","ra":280.89,"dec":40.46,"dist":2278.0,"x":327.3,"y":-1702.1,"z":1478.2,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-445","koi":"KOI-6756","ra":296.26,"dec":44.29,"dist":1744.6,"x":552.5,"y":-1120.0,"z":1218.2,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-447","koi":"KOI-5022","ra":280.1,"dec":52.15,"dist":925.7,"x":99.6,"y":-559.2,"z":731.0,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-449","koi":"KOI-1590","ra":291.07,"dec":52.05,"dist":696.7,"x":154.0,"y":-399.8,"z":549.4,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-455","koi":"KOI-4276","ra":300.75,"dec":44.55,"dist":750.0,"x":273.3,"y":-459.3,"z":526.1,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-457","koi":"KOI-0545","ra":283.13,"dec":42.58,"dist":368.3,"x":61.6,"y":-264.1,"z":249.2,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-460","koi":"KOI-6158","ra":294.19,"dec":44.51,"dist":726.3,"x":212.2,"y":-472.5,"z":509.2,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-463","koi":"KOI-3583","ra":285.88,"dec":47.31,"dist":415.1,"x":77.0,"y":-270.7,"z":305.1,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-468","koi":"KOI-0308","ra":280.43,"dec":49.99,"dist":232.9,"x":27.1,"y":-147.3,"z":178.4,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-471","koi":"KOI-2125","ra":300.87,"dec":42.56,"dist":2497.5,"x":943.9,"y":-1579.1,"z":1689.2,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-475","koi":"KOI-5633","ra":293.24,"dec":39.06,"dist":797.5,"x":244.4,"y":-569.0,"z":502.5,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-477","koi":"KOI-4324","ra":290.07,"dec":39.25,"dist":931.6,"x":247.6,"y":-677.5,"z":589.5,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-479","koi":"KOI-7358","ra":287.12,"dec":52.49,"dist":353.9,"x":63.4,"y":-205.9,"z":280.7,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-480","koi":"KOI-0804","ra":294.27,"dec":41.75,"dist":645.1,"x":197.8,"y":-438.7,"z":429.6,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-485","koi":"KOI-5722","ra":298.35,"dec":40.59,"dist":1296.0,"x":467.3,"y":-866.1,"z":843.3,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-487","koi":"KOI-5862","ra":288.2,"dec":47.62,"dist":1132.6,"x":238.4,"y":-725.2,"z":836.7,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-489","koi":"KOI-0543","ra":301.87,"dec":42.14,"dist":270.9,"x":106.0,"y":-170.6,"z":181.8,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-490","koi":"KOI-4443","ra":292.06,"dec":46.03,"dist":304.8,"x":79.5,"y":-196.1,"z":219.3,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TP"},{"name":"Kepler-492","koi":"KOI-5920","ra":291.0,"dec":42.52,"dist":285.2,"x":75.3,"y":-196.3,"z":192.8,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-493","koi":"KOI-3418","ra":297.07,"dec":46.03,"dist":181.7,"x":57.4,"y":-112.3,"z":130.8,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-494","koi":"KOI-0831","ra":294.15,"dec":49.43,"dist":592.0,"x":157.5,"y":-351.3,"z":449.7,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-495","koi":"KOI-7598","ra":293.36,"dec":40.33,"dist":726.9,"x":219.7,"y":-508.7,"z":470.5,"planet_type":"Rocky","outcome":"TP"},{"name":"Kepler-497","koi":"KOI-8263","ra":293.75,"dec":48.3,"dist":1001.2,"x":268.3,"y":-609.6,"z":747.5,"planet_type":"Gas Giant","outcome":"TP"},{"name":"Kepler-310","koi":"KOI-1880","ra":291.5,"dec":48.2,"dist":940,"x":220,"y":-591,"z":701,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-290","koi":"KOI-1700","ra":287.8,"dec":44.1,"dist":710,"x":147,"y":-489,"z":494,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-275","koi":"KOI-1600","ra":293.0,"dec":42.5,"dist":630,"x":184,"y":-428,"z":426,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-260","koi":"KOI-1450","ra":285.5,"dec":46.8,"dist":550,"x":103,"y":-365,"z":400,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-245","koi":"KOI-1300","ra":290.0,"dec":43.0,"dist":480,"x":121,"y":-335,"z":327,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-232","koi":"KOI-1200","ra":288.5,"dec":50.5,"dist":890,"x":183,"y":-545,"z":687,"planet_type":"Gas Giant","outcome":"TN"},{"name":"Kepler-218","koi":"KOI-1100","ra":294.5,"dec":41.2,"dist":760,"x":234,"y":-521,"z":500,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-205","koi":"KOI-1000","ra":282.0,"dec":44.5,"dist":670,"x":109,"y":-460,"z":470,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-195","koi":"KOI-0950","ra":297.0,"dec":47.0,"dist":980,"x":300,"y":-622,"z":717,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-183","koi":"KOI-0900","ra":284.0,"dec":42.0,"dist":430,"x":82,"y":-303,"z":288,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-170","koi":"KOI-0850","ra":291.0,"dec":49.5,"dist":870,"x":196,"y":-530,"z":663,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"Kepler-161","koi":"KOI-0800","ra":288.0,"dec":41.5,"dist":520,"x":118,"y":-371,"z":344,"planet_type":"Rocky","outcome":"TN"},{"name":"Kepler-150","koi":"KOI-0750","ra":295.0,"dec":45.0,"dist":810,"x":246,"y":-525,"z":573,"planet_type":"Gas Giant","outcome":"TN"},{"name":"Kepler-142","koi":"KOI-0700","ra":283.0,"dec":48.0,"dist":700,"x":107,"y":-449,"z":520,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"KOI-500","koi":"KOI-0500","ra":288.98,"dec":41.3,"dist":420,"x":102.6,"y":-298.4,"z":277.2,"planet_type":"Super-Earth/Mini-Neptune","outcome":"FP_miscalled"},{"name":"KOI-503","koi":"KOI-0503","ra":285.72,"dec":49.14,"dist":542,"x":96.1,"y":-341.3,"z":409.9,"planet_type":"Super-Earth/Mini-Neptune","outcome":"FP_miscalled"},{"name":"KOI-506","koi":"KOI-0506","ra":288.54,"dec":48.08,"dist":1025,"x":217.7,"y":-649.3,"z":762.7,"planet_type":"Super-Earth/Mini-Neptune","outcome":"FP_miscalled"},{"name":"KOI-509","koi":"KOI-0509","ra":300.21,"dec":45.35,"dist":828,"x":292.8,"y":-502.9,"z":589.0,"planet_type":"Super-Earth/Mini-Neptune","outcome":"FP_miscalled"},{"name":"KOI-512","koi":"KOI-0512","ra":293.38,"dec":41.53,"dist":1635,"x":485.7,"y":-1123.5,"z":1084.0,"planet_type":"Super-Earth/Mini-Neptune","outcome":"FP_miscalled"},{"name":"KOI-515","koi":"KOI-0515","ra":288.35,"dec":43.93,"dist":1266,"x":287.0,"y":-865.4,"z":878.3,"planet_type":"Rocky","outcome":"FP_miscalled"},{"name":"KOI-518","koi":"KOI-0518","ra":283.7,"dec":47.75,"dist":1548,"x":246.5,"y":-1011.2,"z":1145.9,"planet_type":"Rocky","outcome":"FP_miscalled"},{"name":"KOI-521","koi":"KOI-0521","ra":287.61,"dec":51.76,"dist":1008,"x":188.8,"y":-594.7,"z":791.7,"planet_type":"Rocky","outcome":"FP_miscalled"},{"name":"KOI-524","koi":"KOI-0524","ra":296.76,"dec":45.07,"dist":796,"x":253.1,"y":-502.0,"z":563.5,"planet_type":"Rocky","outcome":"FP_miscalled"},{"name":"KOI-527","koi":"KOI-0527","ra":286.16,"dec":38.61,"dist":462,"x":100.5,"y":-346.7,"z":288.3,"planet_type":"Rocky","outcome":"FP_miscalled"},{"name":"KOI-530","koi":"KOI-0530","ra":301.28,"dec":45.98,"dist":896,"x":323.3,"y":-532.1,"z":644.3,"planet_type":"Gas Giant","outcome":"FP_miscalled"},{"name":"KOI-533","koi":"KOI-0533","ra":299.41,"dec":46.98,"dist":1761,"x":590.0,"y":-1046.6,"z":1287.5,"planet_type":"Gas Giant","outcome":"FP_miscalled"},{"name":"KOI-536","koi":"KOI-0536","ra":288.01,"dec":41.52,"dist":1667,"x":385.9,"y":-1187.0,"z":1105.0,"planet_type":"Gas Giant","outcome":"FP_miscalled"},{"name":"KOI-539","koi":"KOI-0539","ra":283.88,"dec":49.59,"dist":1120,"x":174.2,"y":-704.8,"z":852.8,"planet_type":"Gas Giant","outcome":"FP_miscalled"},{"name":"KOI-542","koi":"KOI-0542","ra":301.14,"dec":51.71,"dist":1229,"x":393.8,"y":-651.8,"z":964.6,"planet_type":"Rocky","outcome":"FN"},{"name":"KOI-545","koi":"KOI-0545","ra":281.28,"dec":38.83,"dist":916,"x":139.6,"y":-699.8,"z":574.3,"planet_type":"Rocky","outcome":"FN"},{"name":"KOI-548","koi":"KOI-0548","ra":297.71,"dec":39.64,"dist":835,"x":299.0,"y":-569.3,"z":532.7,"planet_type":"Super-Earth/Mini-Neptune","outcome":"FN"},{"name":"KOI-551","koi":"KOI-0551","ra":282.31,"dec":42.84,"dist":130,"x":20.3,"y":-93.1,"z":88.4,"planet_type":"Super-Earth/Mini-Neptune","outcome":"FN"},{"name":"KOI-554","koi":"KOI-0554","ra":287.42,"dec":45.83,"dist":457,"x":95.3,"y":-303.8,"z":327.8,"planet_type":"Super-Earth/Mini-Neptune","outcome":"FN"},{"name":"KOI-557","koi":"KOI-0557","ra":297.03,"dec":39.28,"dist":475,"x":167.1,"y":-327.5,"z":300.7,"planet_type":"Gas Giant","outcome":"FN"},{"name":"KOI-560","koi":"KOI-0560","ra":285.91,"dec":44.16,"dist":1403,"x":275.9,"y":-968.0,"z":977.4,"planet_type":"Rocky","outcome":"TN"},{"name":"KOI-563","koi":"KOI-0563","ra":287.93,"dec":48.23,"dist":1669,"x":342.3,"y":-1057.8,"z":1244.8,"planet_type":"Rocky","outcome":"TN"},{"name":"KOI-566","koi":"KOI-0566","ra":283.25,"dec":50.6,"dist":1127,"x":164.0,"y":-696.3,"z":870.9,"planet_type":"Rocky","outcome":"TN"},{"name":"KOI-569","koi":"KOI-0569","ra":296.19,"dec":47.01,"dist":806,"x":242.6,"y":-493.2,"z":589.6,"planet_type":"Rocky","outcome":"TN"},{"name":"KOI-572","koi":"KOI-0572","ra":282.53,"dec":40.51,"dist":413,"x":68.1,"y":-306.5,"z":268.3,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"KOI-575","koi":"KOI-0575","ra":284.23,"dec":40.54,"dist":469,"x":87.6,"y":-345.5,"z":304.8,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"KOI-578","koi":"KOI-0578","ra":292.28,"dec":49.29,"dist":1461,"x":361.3,"y":-881.8,"z":1107.5,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"KOI-581","koi":"KOI-0581","ra":298.27,"dec":40.14,"dist":1502,"x":543.8,"y":-1011.3,"z":968.3,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"KOI-584","koi":"KOI-0584","ra":284.4,"dec":39.51,"dist":603,"x":115.7,"y":-450.6,"z":383.6,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"KOI-587","koi":"KOI-0587","ra":292.8,"dec":39.17,"dist":483,"x":145.1,"y":-345.2,"z":305.1,"planet_type":"Super-Earth/Mini-Neptune","outcome":"TN"},{"name":"KOI-590","koi":"KOI-0590","ra":288.88,"dec":50.01,"dist":791,"x":164.5,"y":-481.0,"z":606.0,"planet_type":"Gas Giant","outcome":"TN"},{"name":"KOI-593","koi":"KOI-0593","ra":289.2,"dec":43.69,"dist":276,"x":65.6,"y":-188.5,"z":190.6,"planet_type":"Gas Giant","outcome":"TN"},{"name":"KOI-596","koi":"KOI-0596","ra":298.97,"dec":51.42,"dist":1332,"x":402.3,"y":-726.7,"z":1041.3,"planet_type":"Gas Giant","outcome":"TN"},{"name":"KOI-599","koi":"KOI-0599","ra":288.87,"dec":44.72,"dist":643,"x":147.8,"y":-432.3,"z":452.4,"planet_type":"Gas Giant","outcome":"TN"}];
+
+STARS.forEach(s=>{ s.display=(s.outcome==='TP'||s.outcome==='FP_miscalled')?'PLANET':'REJECTED'; });
+
+// Solar System planets — positions shown at logarithmic display scale near origin
+// Laid out in the ecliptic plane (z≈0) spiraling outward for readability
+// Real AU distances: Mer 0.39, Ven 0.72, Ear 1.0, Mar 1.52, Jup 5.2, Sat 9.58, Ura 19.2, Nep 30.05
+const SOLAR = [
+  {name:'Mercury', au:0.39,  x:0.988,  y:0.0,     z:0,  color:'#b0bec5', size:3,  note:'0.39 AU · Rocky'},
+  {name:'Venus',   au:0.72,  x:1.15,   y:1.15,    z:0,  color:'#ffe082', size:4,  note:'0.72 AU · Rocky'},
+  {name:'Earth',   au:1.0,   x:0.0,    y:2.079,   z:0,  color:'#42a5f5', size:5,  note:'1.00 AU · Rocky'},
+  {name:'Mars',    au:1.52,  x:-1.961, y:1.961,   z:0,  color:'#ef5350', size:4,  note:'1.52 AU · Rocky'},
+  {name:'Jupiter', au:5.2,   x:-5.474, y:0.0,     z:0,  color:'#ffb74d', size:8,  note:'5.20 AU · Gas Giant'},
+  {name:'Saturn',  au:9.58,  x:-5.004, y:-5.004,  z:0,  color:'#fff59d', size:7,  note:'9.58 AU · Gas Giant'},
+  {name:'Uranus',  au:19.2,  x:0.0,    y:-9.017,  z:0,  color:'#80deea', size:5,  note:'19.2 AU · Ice Giant'},
+  {name:'Neptune', au:30.05, x:7.288,  y:-7.288,  z:0,  color:'#5c6bc0', size:5,  note:'30.05 AU · Ice Giant'},
+];
+
+// Orbit rings — each planet's position is on a circular ring around origin
+// in the XY plane, scaled logarithmically
+function orbitRing(displayRadius, nPts=80){
+  const x=[],y=[],z=[];
+  for(let i=0;i<=nPts;i++){
+    const a=2*Math.PI*i/nPts;
+    x.push(displayRadius*Math.cos(a));
+    y.push(displayRadius*Math.sin(a));
+    z.push(0);
+  }
+  return {x,y,z};
+}
+
+let colorMode='outcome', groupVis={PLANET:true,REJECTED:true}, showSolar=true;
+const TC={'Rocky':'#ef9a9a','Super-Earth/Mini-Neptune':'#80cbc4','Gas Giant':'#ce93d8'};
+
+function mkRand(seed){let s=seed>>>0;return function(){s=(Math.imul(1664525,s)+1013904223)>>>0;return s/4294967296};}
+
+function buildTraces(){
+  const T=[];
+  const rand=mkRand(7777);
+
+  // 1. Background starfield
+  const N=900,R=3800,bx=[],by=[],bz=[],bc=[],bs=[];
+  for(let i=0;i<N;i++){
+    const cosT=2*rand()-1,sinT=Math.sqrt(1-cosT*cosT),phi=2*Math.PI*rand();
+    const r=R*(0.4+0.6*rand());
+    bx.push(r*sinT*Math.cos(phi));by.push(r*sinT*Math.sin(phi));bz.push(r*cosT);
+    const t=rand();
+    bc.push(t<0.18?'rgba(170,205,255,0.55)':t<0.5?'rgba(255,255,255,0.45)':'rgba(255,235,200,0.38)');
+    bs.push(0.5+rand()*1.1);
+  }
+  T.push({type:'scatter3d',mode:'markers',x:bx,y:by,z:bz,
+    marker:{size:bs,color:bc,opacity:1},hoverinfo:'skip',showlegend:false});
+
+  // 2. Solar System
+  if(showSolar){
+    // Sun
+    T.push({type:'scatter3d',mode:'markers+text',
+      x:[0],y:[0],z:[0],text:['☀ Sun'],textposition:'top center',
+      textfont:{family:'Space Mono',size:9,color:'rgba(255,241,118,0.8)'},
+      hoverinfo:'none',showlegend:false,
+      marker:{size:12,color:'#fff176',opacity:1,
+        line:{color:'rgba(255,241,118,0.5)',width:2}}});
+
+    // Orbit rings
+    const orbitRadii = SOLAR.map(p=>Math.sqrt(p.x**2+p.y**2));
+    orbitRadii.forEach(r=>{
+      const ring=orbitRing(r);
+      T.push({type:'scatter3d',mode:'lines',
+        x:ring.x,y:ring.y,z:ring.z,
+        line:{color:'rgba(255,255,255,0.05)',width:0.8},
+        hoverinfo:'skip',showlegend:false});
+    });
+
+    // Planet markers
+    SOLAR.forEach(p=>{
+      T.push({type:'scatter3d',mode:'markers+text',
+        x:[p.x],y:[p.y],z:[p.z],
+        text:[p.name],textposition:'top center',
+        textfont:{family:'Space Mono',size:8,color:'rgba(255,255,255,0.55)'},
+        customdata:[[p.name,'',p.au+' AU','—',p.note,'solar']],
+        hoverinfo:'none',
+        marker:{size:p.size,color:p.color,opacity:0.95,
+          line:{color:'rgba(255,255,255,0.2)',width:1}},
+        showlegend:false});
+    });
+  }
+
+  // 3. Kepler stars
+  const groups=colorMode==='outcome'?['PLANET','REJECTED']:['Rocky','Super-Earth/Mini-Neptune','Gas Giant'];
+  const LABELS={'PLANET':'Planet Candidate (83)','REJECTED':'Rejected — FP (67)',
+    'Rocky':'Rocky','Super-Earth/Mini-Neptune':'Super-Earth / Mini-Neptune','Gas Giant':'Gas Giant'};
+  for(const g of groups){
+    const f=STARS.filter(s=>{
+      const mg=colorMode==='outcome'?s.display===g:s.planet_type===g;
+      const mv=colorMode==='outcome'?groupVis[g]:true;
+      return mg&&mv;
+    });
+    if(!f.length)continue;
+    const isP=g==='PLANET';
+    const col=colorMode==='outcome'?(isP?'#00e5ff':'#4a6070'):TC[g];
+    T.push({type:'scatter3d',mode:'markers',name:LABELS[g]||g,
+      x:f.map(s=>s.x),y:f.map(s=>s.y),z:f.map(s=>s.z),
+      customdata:f.map(s=>[s.name,s.koi,s.ra+'° / '+s.dec+'°',s.dist+' pc',s.planet_type,s.outcome]),
+      hoverinfo:'none',
+      marker:{size:colorMode==='outcome'?(isP?5:3.5):4.5,color:col,
+        opacity:isP||colorMode==='type'?0.92:0.42,
+        line:isP?{color:'rgba(0,229,255,0.4)',width:1}:{width:0}}});
+  }
+
+  return T;
+}
+
+const LAYOUT={
+  paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',
+  font:{family:'Space Mono,monospace',color:'#cfd8dc',size:9},
+  margin:{l:0,r:0,t:0,b:0},
+  scene:{
+    bgcolor:'rgba(0,0,0,0)',
+    xaxis:{title:{text:'X (pc)',font:{color:'#1c2e42',size:9}},color:'#0e1a28',
+      gridcolor:'#091018',zerolinecolor:'#0e1a28',showbackground:false,
+      showspikes:false,tickfont:{size:8,color:'#1c2e42'}},
+    yaxis:{title:{text:'Y (pc)',font:{color:'#1c2e42',size:9}},color:'#0e1a28',
+      gridcolor:'#091018',zerolinecolor:'#0e1a28',showbackground:false,
+      showspikes:false,tickfont:{size:8,color:'#1c2e42'}},
+    zaxis:{title:{text:'Z (pc)',font:{color:'#1c2e42',size:9}},color:'#0e1a28',
+      gridcolor:'#091018',zerolinecolor:'#0e1a28',showbackground:false,
+      showspikes:false,tickfont:{size:8,color:'#1c2e42'}},
+    camera:{eye:{x:1.6,y:-2.1,z:1.1},center:{x:0.05,y:-0.05,z:0.03}},
+    aspectmode:'cube',
+    aspectratio:{x:1,y:1,z:0.8}
+  },
+  showlegend:false,uirevision:'keep'
+};
+const CONFIG={
+  displaylogo:false,
+  scrollZoom:false,  // disable Plotly's built-in scroll zoom — we handle it manually
+  modeBarButtonsToRemove:['toImage','resetCameraDefault3d'],
+  responsive:true
+};
+
+Plotly.newPlot('plot',buildTraces(),LAYOUT,CONFIG);
+
+// ─── UNIFIED INTERACTION LAYER (mouse + touch) ───────────────────────────────
+// Handles: mouse wheel zoom, shift+drag pan, touch rotate (1-finger),
+//          pinch zoom (2-finger), 2-finger pan, tap-to-tooltip
+(function(){
+  const plotEl = document.getElementById('plot');
+
+  // ── helpers ──────────────────────────────────────────────────────────────
+  function getCam() {
+    const layout = plotEl.layout;
+    if (!layout || !layout.scene) return null;
+    const cam = layout.scene.camera || {};
+    return {
+      eye: cam.eye    || {x:1.6, y:-2.1, z:1.1},
+      ctr: cam.center || {x:0,   y:0,    z:0},
+      up:  cam.up     || {x:0,   y:0,    z:1}
+    };
+  }
+
+  function applyZoom(factor) {
+    const c = getCam(); if (!c) return;
+    Plotly.relayout('plot', {'scene.camera': {
+      eye:    { x: c.ctr.x + (c.eye.x - c.ctr.x) * factor,
+                y: c.ctr.y + (c.eye.y - c.ctr.y) * factor,
+                z: c.ctr.z + (c.eye.z - c.ctr.z) * factor },
+      center: c.ctr, up: c.up
+    }});
+  }
+
+  function applyPan(dx, dy) {
+    const c = getCam(); if (!c) return;
+    const dist = Math.sqrt((c.eye.x-c.ctr.x)**2 + (c.eye.y-c.ctr.y)**2 + (c.eye.z-c.ctr.z)**2);
+    const s = dist * 0.0012;
+    const px = -dx * s, pz = dy * s;
+    Plotly.relayout('plot', {'scene.camera': {
+      eye:    {x: c.eye.x + px, y: c.eye.y, z: c.eye.z + pz},
+      center: {x: c.ctr.x + px, y: c.ctr.y, z: c.ctr.z + pz},
+      up: c.up
+    }});
+  }
+
+  // ── mouse wheel zoom (desktop) ────────────────────────────────────────────
+  plotEl.addEventListener('wheel', e => {
+    e.preventDefault(); e.stopPropagation();
+    applyZoom(e.deltaY > 0 ? 1.03 : 0.97);
+  }, {passive: false});
+
+  // ── shift+drag pan (desktop) ──────────────────────────────────────────────
+  let shiftDrag = false, mLast = {x:0, y:0};
+  plotEl.addEventListener('mousedown', e => {
+    if (!e.shiftKey) return;
+    shiftDrag = true; mLast = {x: e.clientX, y: e.clientY};
+    e.stopPropagation(); e.preventDefault();
+  }, true);
+  window.addEventListener('mousemove', e => {
+    if (!shiftDrag) return;
+    applyPan(e.clientX - mLast.x, e.clientY - mLast.y);
+    mLast = {x: e.clientX, y: e.clientY};
+  }, true);
+  window.addEventListener('mouseup', () => { shiftDrag = false; }, true);
+  plotEl.addEventListener('dragstart', e => { if(e.shiftKey) e.preventDefault(); }, true);
+
+  // ── touch gestures (iPad) ─────────────────────────────────────────────────
+  // State
+  let tPrev    = null;   // previous single-touch position
+  let tPinch0  = null;   // initial pinch distance
+  let tMid0    = null;   // initial 2-finger midpoint
+  let tMode    = null;   // 'rotate' | 'pinch' | 'pan'
+  let tMoved   = false;  // did the finger move? (for tap detection)
+  let tStart   = null;   // touch start position (for tap detection)
+
+  function touchDist(t) {
+    const dx = t[1].clientX - t[0].clientX;
+    const dy = t[1].clientY - t[0].clientY;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+  function touchMid(t) {
+    return { x: (t[0].clientX + t[1].clientX) / 2,
+             y: (t[0].clientY + t[1].clientY) / 2 };
+  }
+
+  plotEl.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const touches = e.touches;
+
+    if (touches.length === 1) {
+      // Could be a rotate or a tap — decide on touchmove
+      tPrev  = {x: touches[0].clientX, y: touches[0].clientY};
+      tStart = {x: touches[0].clientX, y: touches[0].clientY};
+      tMoved = false;
+      tMode  = 'rotate';
+    } else if (touches.length === 2) {
+      tMode   = null;  // determine on first move
+      tPinch0 = touchDist(touches);
+      tMid0   = touchMid(touches);
+    }
+  }, {passive: false});
+
+  plotEl.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const touches = e.touches;
+
+    if (touches.length === 1 && tMode === 'rotate') {
+      const cur = {x: touches[0].clientX, y: touches[0].clientY};
+      const dx = cur.x - tPrev.x, dy = cur.y - tPrev.y;
+
+      // Mark as moved if finger travelled >6px (distinguishes tap from drag)
+      if (!tMoved && (Math.abs(cur.x - tStart.x) > 6 || Math.abs(cur.y - tStart.y) > 6)) {
+        tMoved = true;
+      }
+
+      if (tMoved) {
+        // Let Plotly handle 1-finger rotate natively by synthesising a
+        // mousemove on the scene — but only if it hasn't started its own
+        // drag. Simplest approach: just pass through (Plotly already handles
+        // touchmove for rotation on its canvas internally).
+        // We only override 2-finger gestures, so nothing to do here.
+      }
+      tPrev = cur;
+
+    } else if (touches.length === 2) {
+      const curDist = touchDist(touches);
+      const curMid  = touchMid(touches);
+
+      // Classify: if fingers moved mostly apart/together → pinch
+      //           if they moved mostly together in same direction → pan
+      if (tMode === null) {
+        const distDelta = Math.abs(curDist - tPinch0);
+        const midDelta  = Math.sqrt((curMid.x-tMid0.x)**2 + (curMid.y-tMid0.y)**2);
+        // Need a threshold before committing to a mode
+        if (distDelta > 8 || midDelta > 8) {
+          tMode = distDelta > midDelta * 0.6 ? 'pinch' : 'pan';
+        }
+      }
+
+      if (tMode === 'pinch') {
+        // Pinch zoom: scale by ratio of current vs initial distance
+        const factor = tPinch0 / curDist;  // pinch in → zoom out, spread → zoom in
+        // Apply incrementally relative to last frame
+        const prevDist = tPinch0;
+        const incFactor = prevDist / curDist;
+        // Clamp to gentle steps so it doesn't snap
+        const clamped = Math.max(0.95, Math.min(1.05, incFactor));
+        applyZoom(clamped);
+        tPinch0 = curDist;  // update so next frame is incremental
+
+      } else if (tMode === 'pan') {
+        const dx = curMid.x - tMid0.x;
+        const dy = curMid.y - tMid0.y;
+        applyPan(dx, dy);
+        tMid0 = curMid;  // incremental
+      }
+    }
+  }, {passive: false});
+
+  plotEl.addEventListener('touchend', e => {
+    // Tap detection: single touch, barely moved, quick
+    if (e.changedTouches.length === 1 && !tMoved) {
+      const touch = e.changedTouches[0];
+      // Fire a synthetic click at the touch point so Plotly's click handler fires
+      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (el) {
+        const clickEv = new MouseEvent('click', {
+          bubbles: true, cancelable: true,
+          clientX: touch.clientX, clientY: touch.clientY,
+          view: window
+        });
+        el.dispatchEvent(clickEv);
+      }
+    }
+    // Reset state when all fingers lift
+    if (e.touches.length === 0) {
+      tPrev = null; tPinch0 = null; tMid0 = null; tMode = null;
+    } else if (e.touches.length === 1) {
+      // Went from 2 fingers to 1 — reset to rotate mode
+      tPrev = {x: e.touches[0].clientX, y: e.touches[0].clientY};
+      tMode = 'rotate'; tMoved = false;
+    }
+  }, {passive: false});
+
+})();
+
+// ─── TOOLTIP ─────────────────────────────────────────────────────────────────
+const tip = document.getElementById('tip');
+let tipPinned = false;  // on touch, tooltip stays until tap elsewhere
+
+function placeTip(x, y) {
+  // Position tooltip so it stays on screen
+  // Small delay so offsetWidth is correct
+  requestAnimationFrame(() => {
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    const vw = window.innerWidth,  vh = window.innerHeight;
+    const pad = 16;
+    let tx = x + pad, ty = y + pad;
+    if (tx + w > vw) tx = x - w - pad;
+    if (ty + h > vh) ty = y - h - pad;
+    if (tx < 0) tx = pad;
+    if (ty < 0) ty = pad;
+    tip.style.left = tx + 'px';
+    tip.style.top  = ty + 'px';
+  });
+}
+
+function showTip(cd, x, y) {
+  const [name, koi, radec, distOrAu, typeOrNote, kind] = cd;
+  document.getElementById('tname').textContent = name;
+
+  const pill = document.getElementById('tpill');
+  const rows = document.getElementById('trows');
+
+  if (kind === 'solar') {
+    pill.innerHTML = '<div class="tpill psolar">☀ Solar System</div>';
+    rows.innerHTML = `
+      <div class="trow"><span class="tkey">Distance</span><span class="tval">${distOrAu}</span></div>
+      <div class="trow"><span class="tkey">Type</span><span class="tval">${typeOrNote}</span></div>`;
+  } else {
+    const pillMap = {
+      'TP':           '<div class="tpill pplanet">✓ Correct — Planet</div>',
+      'FP_miscalled': '<div class="tpill pfp">✗ False Positive (miscalled)</div>',
+      'TN':           '<div class="tpill preject">✓ Correct — Rejected FP</div>',
+      'FN':           '<div class="tpill pfn">✗ Missed Planet (FN)</div>'
+    };
+    pill.innerHTML = pillMap[kind] || '<div class="tpill preject">—</div>';
+    rows.innerHTML = `
+      <div class="trow"><span class="tkey">KOI</span><span class="tval">${koi}</span></div>
+      <div class="trow"><span class="tkey">Distance</span><span class="tval">${distOrAu}</span></div>
+      <div class="trow"><span class="tkey">RA / Dec</span><span class="tval">${radec}</span></div>
+      <div class="trow"><span class="tkey">Planet Type</span><span class="tval">${typeOrNote}</span></div>`;
+  }
+  tip.classList.add('vis');
+  if (x !== undefined) placeTip(x, y);
+}
+
+function hideTip() {
+  tip.classList.remove('vis');
+  tipPinned = false;
+}
+
+// Desktop: hover shows/hides tooltip and follows mouse
+document.getElementById('plot').on('plotly_hover', d => {
+  if (tipPinned) return;  // don't override a tapped tooltip
+  if (d.points[0]?.customdata) showTip(d.points[0].customdata);
+  else hideTip();
+});
+document.getElementById('plot').on('plotly_unhover', () => {
+  if (!tipPinned) hideTip();
+});
+
+// Desktop + touch: click/tap shows tooltip pinned until tap elsewhere
+document.getElementById('plot').on('plotly_click', d => {
+  if (d.points[0]?.customdata) {
+    const ev = d.event;
+    const x = ev?.clientX ?? window.innerWidth / 2;
+    const y = ev?.clientY ?? window.innerHeight / 2;
+    tipPinned = true;
+    showTip(d.points[0].customdata, x, y);
+  }
+});
+
+// Follow mouse on desktop (only when not pinned)
+document.addEventListener('mousemove', e => {
+  if (tipPinned || !tip.classList.contains('vis')) return;
+  placeTip(e.clientX, e.clientY);
+});
+
+// Tap elsewhere to dismiss pinned tooltip
+document.addEventListener('pointerdown', e => {
+  if (!tipPinned) return;
+  if (!tip.contains(e.target)) hideTip();
+}, true);
+
+// Controls
+function redraw(){Plotly.react('plot',buildTraces(),LAYOUT,CONFIG);}
+function setMode(m){
+  colorMode=m;
+  document.getElementById('bo').classList.toggle('on',m==='outcome');
+  document.getElementById('bt').classList.toggle('on',m==='type');
+  document.getElementById('leg-outcome').style.display=m==='outcome'?'':'none';
+  document.getElementById('leg-type').style.display=m==='type'?'':'none';
+  document.getElementById('ltitle').textContent=m==='outcome'?'Model Decision':'Planet Type';
+  redraw();
+}
+function tog(g){
+  groupVis[g]=!groupVis[g];
+  document.getElementById(g==='PLANET'?'tp-btn':'rej-btn').classList.toggle('on',groupVis[g]);
+  redraw();
+}
+function togSolar(){
+  showSolar=!showSolar;
+  document.getElementById('solar-btn').classList.toggle('on',showSolar);
+  redraw();
+}
+</script>
+</body>
+</html>
